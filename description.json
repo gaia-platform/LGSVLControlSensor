@@ -1,5 +1,5 @@
 {
-  "name": "Vehicle Control Sensor",
+  "name": "LGSVL Control Sensor",
   "accessType": "public",
   "description": "Example template of a sensor for vehicle Control information.",
   "licenseName": "LG Content",
