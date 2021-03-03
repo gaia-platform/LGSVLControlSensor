@@ -11,6 +11,8 @@ using Simulator.Utilities;
 using UnityEngine;
 using Simulator.Sensors.UI;
 using System.Collections.Generic;
+using Simulator.Analysis;
+using System.Collections;
 
 namespace Simulator.Sensors
 {
@@ -46,16 +48,49 @@ namespace Simulator.Sensors
 
         VehicleControlData controlData;
 
+        [SensorParameter]
+        public float StuckTravelThreshold = 0.1f; // apollo autoware lgsvl sensor
+        [SensorParameter]
+        public float StuckTimeThreshold = 10.0f;
+        private float ThrottleCommand = 0f;
+        private float ThrottleCuttoff = 0.05f;
+        private Vector3 StuckStartPosition;
+        private float StuckTime;
+        private bool EgoIsStuck = false;
+        private AgentController AgentController;
 
         private void Awake()
         {
             LastControlUpdate = SimulatorManager.Instance.CurrentTime;
             Controller = GetComponentInParent<VehicleController>();
+            AgentController = GetComponentInParent<AgentController>();
             Dynamics = GetComponentInParent<IVehicleDynamics>();
+        }
+
+        private void Start()
+        {
+            StuckStartPosition = transform.position;
         }
 
         private void Update()
         {
+            // stuck analysis
+            ThrottleCommand = Dynamics.AccellInput;
+            if (!EgoIsStuck && ThrottleCommand > ThrottleCuttoff && Vector3.Distance(transform.position, StuckStartPosition) < StuckTravelThreshold)
+            {
+                StuckTime += Time.fixedDeltaTime;
+                if (StuckTime > StuckTimeThreshold)
+                {
+                    StuckEvent(AgentController.GTID);
+                    EgoIsStuck = true;
+                }
+            }
+            else
+            {
+                StuckStartPosition = transform.position;
+                StuckTime = 0f;
+            }
+
             var projectedLinVec = Vector3.Project(Dynamics.RB.velocity, transform.forward);
             ActualLinVel = projectedLinVec.magnitude * (Vector3.Dot(Dynamics.RB.velocity, transform.forward) > 0 ? 1.0f : -1.0f);
 
@@ -107,6 +142,7 @@ namespace Simulator.Sensors
                 {"Last Control Update", LastControlUpdate},
                 {"Actual Linear Velocity", ActualLinVel},
                 {"Actual Angular Velocity", ActualAngVel},
+                { "EgoIsStuck", EgoIsStuck },
             };
 
             if (controlData == null)
@@ -123,6 +159,18 @@ namespace Simulator.Sensors
         public override void OnVisualizeToggle(bool state)
         {
             //
+        }
+
+        private void StuckEvent(uint id)
+        {
+            Hashtable data = new Hashtable
+            {
+                { "Id", id },
+                { "Type", "Stuck" },
+                { "Time", SimulatorManager.Instance.GetSessionElapsedTimeSpan().ToString() },
+                { "Status", AnalysisManager.AnalysisStatusType.Failed },
+            };
+            SimulatorManager.Instance.AnalysisManager.AddEvent(data);
         }
     }
 }
