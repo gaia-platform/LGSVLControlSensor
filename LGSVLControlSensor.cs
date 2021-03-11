@@ -120,6 +120,9 @@ namespace Simulator.Sensors
         {
             bridge.AddSubscriber<VehicleControlData>(Topic, data =>
             {
+                if (Time.timeScale == 0f)
+                    return;
+
                 controlData = data;
                 LastControlUpdate = SimulatorManager.Instance.CurrentTime;
 
