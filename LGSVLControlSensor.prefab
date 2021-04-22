@@ -40,13 +40,16 @@ MonoBehaviour:
   m_GameObject: {fileID: 2862703165869911399}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 610a84b85cd86da44a71c879d148eb75, type: 3}
+  m_Script: {fileID: 11500000, guid: 45c8e039df41dba4197af4f5c43783c3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   Name: 
   Topic: 
   Frame: 
   ParentTransform: {fileID: 0}
+  MaxSteer: 0
+  MaxAccel: 0
+  MaxBrake: 0
   AccelerationInputCurve:
     serializedVersion: 2
     m_Curve:
@@ -95,3 +98,5 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+  StuckTravelThreshold: 0.1
+  StuckTimeThreshold: 10
