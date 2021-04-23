@@ -118,21 +118,41 @@ namespace Simulator.Sensors
 
         public override void OnBridgeSetup(BridgeInstance bridge)
         {
-            bridge.AddSubscriber<VehicleControlData>(Topic, data =>
+            if (bridge.Plugin.Factory is Bridge.Ros.RosBridgeFactory)
             {
-                if (Time.timeScale == 0f)
-                    return;
+                bridge.AddSubscriber<VehicleControlData>(Topic, data =>
+                {
+                    if (Time.timeScale == 0f)
+                        return;
 
-                controlData = data;
-                LastControlUpdate = SimulatorManager.Instance.CurrentTime;
+                    controlData = data;
+                    LastControlUpdate = SimulatorManager.Instance.CurrentTime;
 
-                float wheelAngle = data.SteerAngle.GetValueOrDefault();
-                wheelAngle = UnityEngine.Mathf.Clamp(wheelAngle, -Dynamics.MaxSteeringAngle, Dynamics.MaxSteeringAngle);
-                var k = (float)(wheelAngle + Dynamics.MaxSteeringAngle) / (Dynamics.MaxSteeringAngle * 2);
+                    float wheelAngle = data.SteerAngle.GetValueOrDefault();
+                    wheelAngle = UnityEngine.Mathf.Clamp(wheelAngle, -Dynamics.MaxSteeringAngle, Dynamics.MaxSteeringAngle);
+                    var k = (float)(wheelAngle + Dynamics.MaxSteeringAngle) / (Dynamics.MaxSteeringAngle * 2);
 
-                ADSteerInput = UnityEngine.Mathf.Lerp(-1f, 1f, k);
-                ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
-            });
+                    ADSteerInput = UnityEngine.Mathf.Lerp(-1f, 1f, k);
+                    ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
+                });
+            }
+            else if (bridge.Plugin.Factory is Bridge.Ros2.Ros2BridgeFactory)
+            {
+                bridge.AddSubscriber<VehicleControlData>(Topic, data =>
+                {
+                    if (Time.timeScale == 0f)
+                        return;
+
+                    controlData = data;
+                    LastControlUpdate = SimulatorManager.Instance.CurrentTime;
+
+                    float wheelAngle = data.SteerAngle.GetValueOrDefault();
+
+                    ADSteerInput = wheelAngle;
+                    ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
+                });
+            }
+
         }
 
         public override void OnVisualize(Visualizer visualizer)
