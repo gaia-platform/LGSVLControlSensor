@@ -121,7 +121,7 @@ namespace Simulator.Sensors
 
         public override void OnBridgeSetup(BridgeInstance bridge)
         {
-            if (bridge.Plugin.Factory is Bridge.Ros.RosBridgeFactory)
+            if (bridge.Plugin.GetBridgeNameAttribute().Name == "ROS")
             {
                 bridge.AddSubscriber<VehicleControlData>(Topic, data =>
                 {
@@ -139,7 +139,7 @@ namespace Simulator.Sensors
                     ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
                 });
             }
-            else if (bridge.Plugin.Factory is Bridge.Ros2.Ros2BridgeFactory)
+            else if (bridge.Plugin.GetBridgeNameAttribute().Name == "ROS2")
             {
                 bridge.AddSubscriber<VehicleControlData>(Topic, data =>
                 {
