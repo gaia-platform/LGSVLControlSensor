@@ -153,6 +153,15 @@ namespace Simulator.Sensors
 
                     ADSteerInput = wheelAngle;
                     ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
+
+                    if (data.TargetGear == GearPosition.Reverse)
+                    {
+                        Dynamics.ShiftReverseAutoGearBox();
+                    }
+                    else if (data.TargetGear == GearPosition.Drive)
+                    {
+                        Dynamics.ShiftFirstGear();
+                    }
                 });
             }
 
