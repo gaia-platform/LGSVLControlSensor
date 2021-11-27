@@ -30,6 +30,7 @@ namespace Simulator.Sensors
         public float SteerInput { get; private set; } = 0f;
         public float AccelInput { get; private set; } = 0f;
         public float BrakeInput { get; private set; } = 0f;
+        public int? TargetGear { get; private set; } = 0;
 
         [AnalysisMeasurement(MeasurementType.Input)]
         public float MaxSteer = 0f;
@@ -41,12 +42,23 @@ namespace Simulator.Sensors
         public float MaxBrake = 0f;
 
         float ADAccelInput = 0f;
+        float ADBrakeInput = 0f;
         float ADSteerInput = 0f;
+        int ADTargetGear = 0;
 
         public AnimationCurve AccelerationInputCurve;
         public AnimationCurve BrakeInputCurve;
 
         VehicleControlData controlData;
+
+        [SensorParameter]
+        public bool UseNormalizedSteerAngle = false;
+
+        [SensorParameter]
+        public bool ResetWhenMissingInputs = true;
+
+        [SensorParameter]
+        public bool UseAutomaticTransmission = true;
 
         [SensorParameter]
         public float StuckTravelThreshold = 0.1f; // apollo autoware lgsvl sensor
@@ -72,7 +84,7 @@ namespace Simulator.Sensors
 
         protected override void Deinitialize()
         {
-            
+
         }
 
         private void Update()
@@ -100,10 +112,13 @@ namespace Simulator.Sensors
             var projectedAngVec = Vector3.Project(Dynamics.AngularVelocity, transform.up);
             ActualAngVel = projectedAngVec.magnitude * (projectedAngVec.y > 0 ? -1.0f : 1.0f);
 
-            // LastControlUpdate and Time.Time come from Unity.
-            if (SimulatorManager.Instance.CurrentTime - LastControlUpdate >= 0.5)    // > 500ms
+            if (ResetWhenMissingInputs)
             {
-                ADAccelInput = ADSteerInput = AccelInput = SteerInput = 0f;
+                // LastControlUpdate and Time.Time come from Unity.
+                if (SimulatorManager.Instance.CurrentTime - LastControlUpdate >= 0.5)    // > 500ms
+                {
+                    ADAccelInput = ADSteerInput = AccelInput = SteerInput = 0f;
+                }
             }
         }
 
@@ -113,9 +128,52 @@ namespace Simulator.Sensors
             {
                 AccelInput = ADAccelInput;
                 SteerInput = ADSteerInput;
+                BrakeInput = ADBrakeInput;
+                TargetGear = ADTargetGear;
                 MaxSteer = Mathf.Max(MaxSteer, Mathf.Sign(SteerInput) * SteerInput);
                 MaxAccel = Mathf.Max(MaxAccel, Mathf.Sign(AccelInput) * AccelInput);
                 MaxBrake = Mathf.Max(MaxBrake, Mathf.Sign(BrakeInput) * BrakeInput);
+            }
+        }
+
+        private float CalculateSteerInput(VehicleControlData data)
+        {
+            float wheelAngle = data.SteerAngle.GetValueOrDefault();
+            if (UseNormalizedSteerAngle)
+            {
+                return Mathf.Clamp(wheelAngle, -1f, 1f);
+            }
+            else
+            {
+                wheelAngle = UnityEngine.Mathf.Clamp(wheelAngle, -Dynamics.MaxSteeringAngle, Dynamics.MaxSteeringAngle);
+                var k = (float)(wheelAngle + Dynamics.MaxSteeringAngle) / (Dynamics.MaxSteeringAngle * 2);
+                return UnityEngine.Mathf.Lerp(-1f, 1f, k);
+            }
+        }
+
+        private void OnVehicleControlData(VehicleControlData data)
+        {
+            if (Time.timeScale == 0f)
+                return;
+
+            controlData = data;
+            LastControlUpdate = SimulatorManager.Instance.CurrentTime;
+
+            ADSteerInput = CalculateSteerInput(data);
+            ADAccelInput = data.Acceleration.GetValueOrDefault();
+            ADBrakeInput = data.Braking.GetValueOrDefault();
+            ADTargetGear = (int)data.TargetGear.GetValueOrDefault();
+
+            if (UseAutomaticTransmission)
+            {
+                if (ADTargetGear == (int)GearPosition.Reverse)
+                {
+                    Dynamics.ShiftReverseAutoGearBox();
+                }
+                else if (ADTargetGear == (int)GearPosition.Drive)
+                {
+                    Dynamics.ShiftFirstGear();
+                }
             }
         }
 
@@ -123,48 +181,12 @@ namespace Simulator.Sensors
         {
             if (bridge.Plugin.GetBridgeNameAttribute().Type == "ROS")
             {
-                bridge.AddSubscriber<VehicleControlData>(Topic, data =>
-                {
-                    if (Time.timeScale == 0f)
-                        return;
-
-                    controlData = data;
-                    LastControlUpdate = SimulatorManager.Instance.CurrentTime;
-
-                    float wheelAngle = data.SteerAngle.GetValueOrDefault();
-                    wheelAngle = UnityEngine.Mathf.Clamp(wheelAngle, -Dynamics.MaxSteeringAngle, Dynamics.MaxSteeringAngle);
-                    var k = (float)(wheelAngle + Dynamics.MaxSteeringAngle) / (Dynamics.MaxSteeringAngle * 2);
-
-                    ADSteerInput = UnityEngine.Mathf.Lerp(-1f, 1f, k);
-                    ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
-                });
+                bridge.AddSubscriber<VehicleControlData>(Topic, OnVehicleControlData);
             }
             else if (bridge.Plugin.GetBridgeNameAttribute().Type == "ROS2")
             {
-                bridge.AddSubscriber<VehicleControlData>(Topic, data =>
-                {
-                    if (Time.timeScale == 0f)
-                        return;
-
-                    controlData = data;
-                    LastControlUpdate = SimulatorManager.Instance.CurrentTime;
-
-                    float wheelAngle = data.SteerAngle.GetValueOrDefault();
-
-                    ADSteerInput = wheelAngle;
-                    ADAccelInput = data.Acceleration.GetValueOrDefault() - data.Braking.GetValueOrDefault();
-
-                    if (data.TargetGear == GearPosition.Reverse)
-                    {
-                        Dynamics.ShiftReverseAutoGearBox();
-                    }
-                    else if (data.TargetGear == GearPosition.Drive)
-                    {
-                        Dynamics.ShiftFirstGear();
-                    }
-                });
+                bridge.AddSubscriber<VehicleControlData>(Topic, OnVehicleControlData);
             }
-
         }
 
         public override void OnVisualize(Visualizer visualizer)
@@ -174,19 +196,21 @@ namespace Simulator.Sensors
             {
                 {"AD Accel Input", ADAccelInput},
                 {"AD Steer Input", ADSteerInput},
+                {"AD Brake Input", ADBrakeInput},
+                {"AD Target Gear", ADTargetGear},
                 {"Last Control Update", LastControlUpdate},
                 {"Actual Linear Velocity", ActualLinVel},
                 {"Actual Angular Velocity", ActualAngVel},
-                { "EgoIsStuck", EgoIsStuck },
+                {"EgoIsStuck", EgoIsStuck },
             };
 
-            if (controlData == null)
+            if (controlData != null)
             {
-                return;
+                graphData.Add("Acceleration", controlData.Acceleration.GetValueOrDefault());
+                graphData.Add("Braking", controlData.Braking.GetValueOrDefault());
+                graphData.Add("Steer Angle", controlData.SteerAngle.GetValueOrDefault());
+                graphData.Add("Target Gear", controlData.TargetGear.GetValueOrDefault());
             }
-            graphData.Add("Acceleration", controlData.Acceleration.GetValueOrDefault());
-            graphData.Add("Braking", controlData.Braking.GetValueOrDefault());
-            graphData.Add("Steer Angle", controlData.SteerAngle.GetValueOrDefault());
 
             visualizer.UpdateGraphValues(graphData);
         }
